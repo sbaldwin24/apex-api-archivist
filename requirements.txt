@@ -1,0 +1,5 @@
+# Python dependencies for Crawl4AI server
+crawl4ai>=1.0.1
+aiohttp>=3.9.0
+asyncio
+requests>=2.31.0

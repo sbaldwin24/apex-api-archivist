@@ -1,0 +1,32 @@
+# AWS ECS Deployment Configuration
+
+services:
+  apex-api:
+    image: apex-data-api:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=${RDS_ENDPOINT}
+      - DB_PASSWORD=${RDS_PASSWORD}
+    depends_on:
+      - database
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  database:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=apex_data_prod
+      - POSTGRES_USER=apex_api_user
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

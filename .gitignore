@@ -303,6 +303,43 @@ debug.log
 error.log
 access.log
 
+# ===== TERRAFORM =====
+# Terraform state files
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform plan files
+*.tfplan
+*.tfplan.*
+
+# Terraform provider cache
+.terraform/
+.terraform.lock.hcl
+
+# Terraform variable files with secrets
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+secret.tfvars
+
+# Terraform override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI configuration files
+.terraformrc
+terraform.rc
+
+# Deployment configuration with secrets
+deploy-aws.local.yml
+deploy-aws.prod.yml
+deploy-aws.*.yml
+!deploy-aws.yml
+!deploy-aws.example.yml
+
 # ===== SECURITY & SECRETS =====
 # API Keys, tokens, passwords
 **/secrets/
