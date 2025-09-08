@@ -1,0 +1,34 @@
+# Example Terraform variables for Apex Data API Multi-Region Infrastructure
+# Copy this file to terraform.tfvars and modify the values as needed
+
+# Environment configuration
+environment = "dev"  # Change to "staging" or "prod" for other environments
+
+# Database configuration
+db_instance_class                        = "db.r6g.large"         # Use db.r6g.xlarge or larger for production
+enable_deletion_protection               = false                  # Set to true for production
+backup_retention_days                   = 14                     # Increase for production (up to 35 days)
+enable_performance_insights             = true
+performance_insights_retention_period   = 7                      # Use 31+ days for production (paid feature)
+enable_multi_az                         = true                   # Keep true for high availability
+
+# CloudFront configuration
+cloudfront_price_class = "PriceClass_100"                        # Use "PriceClass_All" for global production
+
+# ALB configuration
+enable_alb_access_logs = true
+
+# Custom tags (optional - will be merged with default tags)
+common_tags = {
+  Project         = "apex-api"
+  Owner           = "apex-team"
+  CostCenter      = "engineering"
+  Repository      = "apex-api-archivist"
+  TerraformManaged = "true"
+  # Add your custom tags here
+  # Team            = "platform-team"
+  # BusinessUnit    = "sports-data"
+}
+
+# Note: db_password is deprecated and should not be set
+# The infrastructure now uses AWS Secrets Manager for database password management
