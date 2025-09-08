@@ -1,13 +1,18 @@
 # ===== ENVIRONMENT VARIABLES =====
-# All environment files (except examples)
+# All environment files (except templates)
 .env
 .env.*
 !.env.*.example
 !.env.example
+!.env.*.template
+!.env.template
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Production environment (contains secrets)
+.env.prod
 
 # ===== NODE.JS =====
 # Dependencies
@@ -271,7 +276,7 @@ config/staging.json
 *.p12
 *.pfx
 
-# NASCAR specific data files
+# Apex specific data files
 nascar-data/
 race-results/
 driver-data/
@@ -409,3 +414,4 @@ scratch/
 testing/
 experiments/
 start_server.sh
+dependency-update-report-20250908-151401.md

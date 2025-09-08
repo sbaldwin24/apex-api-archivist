@@ -1,0 +1,398 @@
+# Docker Compose for NASCAR Data API Production Environment
+# This setup provides production optimizations, security, and monitoring
+
+services:
+  # ============================================================================
+  # Main Application Service (Production Mode)
+  # ============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        NODE_ENV: production
+    image: apex-api:latest
+    container_name: apex_api_prod
+    restart: always
+    
+    # Production port mapping (internal only)
+    expose:
+      - "3000"
+    
+    # Environment variables loaded from .env file
+    env_file:
+      - .env.prod
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - ENABLE_CORS=false
+      - API_RATE_LIMIT=50
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    
+    # Dependencies
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    # Production networks
+    networks:
+      - apex-backend
+      - apex-frontend
+    
+    # Resource limits for production
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache
+      - /app/logs
+    
+    # Log configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=api,environment=production"
+
+  # ============================================================================
+  # NGINX Reverse Proxy & Load Balancer
+  # ============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: apex_nginx_prod
+    restart: always
+    
+    # Port mapping
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    # Configuration and SSL certificates
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    depends_on:
+      - api
+    
+    networks:
+      - apex-frontend
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    
+    # Log configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=nginx,environment=production"
+
+  # ============================================================================
+  # PostgreSQL Database Service (Production)
+  # ============================================================================
+  postgres:
+    image: postgres:17-alpine
+    container_name: apex_postgres_prod
+    restart: always
+    
+    # Database configuration from env file
+    env_file:
+      - .env.prod
+    environment:
+      - POSTGRES_DB=apex_prod
+      - POSTGRES_USER=apex_user
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --locale=C
+    
+    # NO port exposure for security (internal access only)
+    expose:
+      - "5432"
+    
+    # Persistent data storage with backup
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+      - ./sql/production:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex_user -d apex_prod"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - apex-backend
+    
+    # Production PostgreSQL configuration
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    
+    # Log configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "service=postgres,environment=production"
+
+  # ============================================================================
+  # Redis Cache Service (Production)
+  # ============================================================================
+  redis:
+    image: redis:8.2.1-alpine
+    container_name: apex_redis_prod
+    restart: always
+    
+    # NO port exposure for security (internal access only)
+    expose:
+      - "6379"
+    
+    # Load Redis password from env file
+    env_file:
+      - .env.prod
+    
+    # Redis configuration with persistence and security
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --requirepass ${REDIS_PASSWORD}
+      --rename-command FLUSHDB ""
+      --rename-command FLUSHALL ""
+      --rename-command DEBUG ""
+      --rename-command CONFIG ""
+    
+    # Persistent data storage
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/etc/redis/redis.conf:ro
+    
+    # Health check  
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a $$REDIS_PASSWORD ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    
+    networks:
+      - apex-backend
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    
+    # Security settings
+    security_opt:
+      - no-new-privileges:true
+    
+    # Log configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+        labels: "service=redis,environment=production"
+
+  # ============================================================================
+  # Database Backup Service
+  # ============================================================================
+  postgres-backup:
+    image: postgres:17-alpine
+    container_name: apex_postgres_backup
+    restart: "no"  # Run on-demand or via cron
+    
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=apex_prod
+      - POSTGRES_USER=apex_user
+    
+    volumes:
+      - postgres_backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    networks:
+      - apex-backend
+    
+    # Backup command
+    command: ["/backup.sh"]
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  # ============================================================================
+  # Monitoring: Prometheus Metrics Exporter
+  # ============================================================================
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: apex_node_exporter
+    restart: unless-stopped
+    
+    # Expose metrics port
+    expose:
+      - "9100"
+    
+    # Host system monitoring
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    
+    networks:
+      - apex-monitoring
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+
+# ============================================================================
+# Named Volumes (Production)
+# ============================================================================
+volumes:
+  # Database data with driver options for production
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/apex/postgres/data
+  
+  # Database backups
+  postgres_backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/apex/postgres/backups
+  
+  # Redis data persistence
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/apex/redis/data
+  
+  # NGINX logs
+  nginx_logs:
+    driver: local
+
+# ============================================================================
+# Networks (Production with Isolation)
+# ============================================================================
+networks:
+  # Frontend network (public-facing)
+  apex-frontend:
+    driver: bridge
+    name: apex-frontend-network
+    internal: false
+  
+  # Backend network (database and cache)
+  apex-backend:
+    driver: bridge
+    name: apex-backend-network
+    internal: true
+  
+  # Monitoring network
+  apex-monitoring:
+    driver: bridge
+    name: apex-monitoring-network
+    internal: true

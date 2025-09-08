@@ -1,0 +1,253 @@
+# Docker Compose for Apex Data API Development Environment
+# This setup provides hot reload, debugging capabilities, and development services
+
+services:
+  # ============================================================================
+  # Main Application Service (Development Mode)
+  # ============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+      args:
+        NODE_ENV: development
+    container_name: apex_api_dev
+    restart: unless-stopped
+
+    # Development port mapping
+    ports:
+      - "3000:3000"      # API server
+      - "9229:9229"      # Node.js debugger
+
+    # Environment variables for development
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=pretty
+      - ENABLE_CORS=true
+      - API_RATE_LIMIT=100
+      - SESSION_SECRET=dev-session-secret-change-in-production
+      - DATABASE_URL=postgresql://apex_user:apex_pass@postgres:5432/apex_dev
+      - REDIS_URL=redis://redis:6379/0
+      - PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+
+    # Volume mounts for hot reload and development
+    volumes:
+      - ./src:/app/src:ro                    # Source code (read-only)
+      - ./package.json:/app/package.json:ro  # Package dependencies
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./tsconfig.dev.json:/app/tsconfig.dev.json:ro
+      - node_modules:/app/node_modules       # Named volume for node_modules
+      - ./logs:/app/logs                     # Log files for debugging
+      - playwright-cache:/opt/ms-playwright  # Playwright browser cache
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Dependencies
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # Development command with hot reload
+    command: ["pnpm", "run", "dev"]
+
+    # Development networks
+    networks:
+      - apex-dev
+
+    # Resource limits for development
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ============================================================================
+  # PostgreSQL Database Service
+  # ============================================================================
+  postgres:
+    image: postgres:17-alpine
+    container_name: apex_postgres_dev
+    restart: unless-stopped
+
+    # Database configuration
+    environment:
+      - POSTGRES_DB=apex_dev
+      - POSTGRES_USER=apex_user
+      - POSTGRES_PASSWORD=apex_pass
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+
+    # Port mapping
+    ports:
+      - "5432:5432"
+
+    # Persistent data storage
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro  # Initialization scripts
+
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex_user -d apex_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - apex-dev
+
+    # Performance tuning for development
+    command: >
+      postgres
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+
+  # ============================================================================
+  # Redis Cache Service
+  # ============================================================================
+  redis:
+    image: redis:8.2.1-alpine
+    container_name: apex_redis_dev
+    restart: unless-stopped
+
+    # Port mapping
+    ports:
+      - "6379:6379"
+
+    # Redis configuration
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+
+    # Persistent data storage
+    volumes:
+      - redis_data:/data
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - apex-dev
+
+  # ============================================================================
+  # Database Management Tool (pgAdmin)
+  # ============================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: apex_pgadmin_dev
+    restart: unless-stopped
+
+    # pgAdmin configuration
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=dev@apex-api.local
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+
+    # Port mapping
+    ports:
+      - "5050:80"
+
+    # Configuration persistence
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - apex-dev
+
+  # ============================================================================
+  # Redis Management Tool (RedisInsight)
+  # ============================================================================
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: apex_redis_insight_dev
+    restart: unless-stopped
+
+    # Port mapping
+    ports:
+      - "8001:8001"
+
+    # Data persistence
+    volumes:
+      - redis_insight_data:/db
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    networks:
+      - apex-dev
+
+# ============================================================================
+# Named Volumes
+# ============================================================================
+volumes:
+  # Node.js dependencies volume (for performance)
+  node_modules:
+    driver: local
+
+  # Database data persistence
+  postgres_data:
+    driver: local
+
+  # Redis data persistence
+  redis_data:
+    driver: local
+
+  # pgAdmin configuration persistence
+  pgadmin_data:
+    driver: local
+
+  # Redis Insight data persistence
+  redis_insight_data:
+    driver: local
+
+  # Playwright browser cache
+  playwright-cache:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  apex-dev:
+    driver: bridge
+    name: apex-dev-network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

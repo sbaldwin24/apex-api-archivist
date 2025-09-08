@@ -1,0 +1,56 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on",
+				"useSortedAttributes": "on",
+				"useSortedKeys": "on"
+			}
+		}
+	},
+	"graphql": {
+		"assist": { "enabled": true },
+		"formatter": {
+			"bracketSpacing": true,
+			"enabled": true,
+			"indentStyle": "space",
+			"indentWidth": 2,
+			"lineWidth": 120,
+			"quoteStyle": "single"
+		},
+		"linter": { "enabled": true }
+	},
+
+	"html": {
+		"formatter": {
+			"attributePosition": "auto",
+			"bracketSameLine": true,
+			"enabled": true,
+			"indentScriptAndStyle": true,
+			"indentStyle": "space",
+			"indentWidth": 2,
+			"lineEnding": "lf",
+			"lineWidth": 120,
+			"selfCloseVoidElements": "always",
+			"whitespaceSensitivity": "strict"
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"jsxQuoteStyle": "single",
+			"quoteStyle": "single",
+			"trailingCommas": "none"
+		}
+	},
+	"linter": {
+		"rules": {
+			"style": {
+				"noNonNullAssertion": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "off"
+			}
+		}
+	}
+}
