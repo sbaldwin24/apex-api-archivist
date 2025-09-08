@@ -1,0 +1,42 @@
+{
+	"Servers": {
+		"1": {
+			"BGColor": "#4a90e2",
+			"Comment": "Development database for NASCAR Data API",
+			"FGColor": "#ffffff",
+			"Group": "Development",
+			"Host": "postgres",
+			"MaintenanceDB": "nascar_dev",
+			"Name": "NASCAR API Database (Development)",
+			"PassFile": "/var/lib/pgadmin/pgpass",
+			"Port": 5432,
+			"Service": "",
+			"Shared": false,
+			"SSLMode": "prefer",
+			"Timeout": 10,
+			"TunnelAuthentication": 0,
+			"TunnelPort": "22",
+			"Username": "postgres",
+			"UseSSHTunnel": 0
+		},
+		"2": {
+			"BGColor": "#e74c3c",
+			"Comment": "Production database for NASCAR Data API",
+			"FGColor": "#ffffff",
+			"Group": "Production",
+			"Host": "postgres",
+			"MaintenanceDB": "nascar_prod",
+			"Name": "NASCAR API Database (Production)",
+			"PassFile": "/var/lib/pgadmin/pgpass",
+			"Port": 5432,
+			"Service": "",
+			"Shared": false,
+			"SSLMode": "require",
+			"Timeout": 10,
+			"TunnelAuthentication": 0,
+			"TunnelPort": "22",
+			"Username": "postgres",
+			"UseSSHTunnel": 0
+		}
+	}
+}

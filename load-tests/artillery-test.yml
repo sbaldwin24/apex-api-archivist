@@ -1,0 +1,67 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 10
+      name: "Ramp up load"
+    - duration: 300
+      arrivalRate: 20
+      name: "Sustained load"
+    - duration: 60
+      arrivalRate: 50
+      name: "Spike test"
+  defaults:
+    headers:
+      X-API-Key: 'demo-key-123'
+  processor: "./load-test-functions.js"
+
+scenarios:
+  - name: "API Load Test"
+    weight: 100
+    flow:
+      - get:
+          url: "/health"
+          expect:
+            - statusCode: 200
+      - think: 1
+      
+      # Test race endpoints (60% of traffic)
+      - weight: 60
+        get:
+          url: "/api/races/2024"
+          expect:
+            - statusCode: 200
+            - hasProperty: "length"
+      
+      # Test specific race results (25% of traffic)
+      - weight: 25
+        function: "getRaceResults"
+      
+      # Test standings (10% of traffic)  
+      - weight: 10
+        get:
+          url: "/api/standings/2024"
+          expect:
+            - statusCode: 200
+      
+      # Test driver profiles (5% of traffic)
+      - weight: 5
+        function: "getDriverProfile"
+      
+      - think: 2
+
+# Performance expectations
+expect:
+  - statusCode: 200
+  - contentType: json
+  - maxResponseTime: 1000
+
+# Metrics to track
+metrics:
+  - name: "response_time_p95"
+    unit: "ms"
+  - name: "error_rate"
+    unit: "percent"
