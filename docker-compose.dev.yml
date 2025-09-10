@@ -17,8 +17,8 @@ services:
 
     # Development port mapping
     ports:
-      - "3000:3000"      # API server
-      - "9229:9229"      # Node.js debugger
+      - 3000:3000      # API server
+      - 9229:9229      # Node.js debugger
 
     # Environment variables for development
     environment:
@@ -45,7 +45,11 @@ services:
 
     # Health check
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test:
+        - CMD
+        - curl
+        - --f
+        - http://localhost:3000/health
       interval: 30s
       timeout: 10s
       retries: 3
@@ -59,7 +63,10 @@ services:
         condition: service_healthy
 
     # Development command with hot reload
-    command: ["pnpm", "run", "dev"]
+    command:
+      - pnpm
+      - run
+      - dev
 
     # Development networks
     networks:
@@ -92,7 +99,7 @@ services:
 
     # Port mapping
     ports:
-      - "5432:5432"
+      - 5432:5432
 
     # Persistent data storage
     volumes:
@@ -101,7 +108,13 @@ services:
 
     # Health check
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U apex_user -d apex_dev"]
+      test:
+        - CMD-SHELL
+        - pg_isready
+        - -U
+        - apex_user
+        - -d
+        - apex_dev
       interval: 10s
       timeout: 5s
       retries: 5
@@ -131,7 +144,7 @@ services:
 
     # Port mapping
     ports:
-      - "6379:6379"
+      - 6379:6379
 
     # Redis configuration
     command: >
@@ -150,7 +163,10 @@ services:
 
     # Health check
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD
+        - redis-cli
+        - ping
       interval: 10s
       timeout: 3s
       retries: 3
@@ -176,7 +192,7 @@ services:
 
     # Port mapping
     ports:
-      - "5050:80"
+      - 5050:80
 
     # Configuration persistence
     volumes:
@@ -200,7 +216,7 @@ services:
 
     # Port mapping
     ports:
-      - "8001:8001"
+      - 8001:8001
 
     # Data persistence
     volumes:
