@@ -1,4 +1,4 @@
-# NASCAR Data API - Development Makefile
+# Apex Data API - Development Makefile
 # Provides consistent commands across different environments
 
 # Colors for output
