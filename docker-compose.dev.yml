@@ -28,8 +28,8 @@ services:
       - LOG_FORMAT=pretty
       - ENABLE_CORS=true
       - API_RATE_LIMIT=100
-      - SESSION_SECRET=dev-session-secret-change-in-production
-      - DATABASE_URL=postgresql://apex_user:apex_pass@postgres:5432/apex_dev
+      - SESSION_SECRET=${SESSION_SECRET}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-apex_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-apex_dev}}
       - REDIS_URL=redis://redis:6379/0
       - PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 
@@ -92,9 +92,9 @@ services:
 
     # Database configuration
     environment:
-      - POSTGRES_DB=apex_dev
-      - POSTGRES_USER=apex_user
-      - POSTGRES_PASSWORD=apex_pass
+      - POSTGRES_DB=${POSTGRES_DB:-apex_dev}
+      - POSTGRES_USER=${POSTGRES_USER:-apex_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8
 
     # Port mapping
@@ -112,9 +112,9 @@ services:
         - CMD-SHELL
         - pg_isready
         - -U
-        - apex_user
+        - ${POSTGRES_USER:-apex_user}
         - -d
-        - apex_dev
+        - ${POSTGRES_DB:-apex_dev}
       interval: 10s
       timeout: 5s
       retries: 5
@@ -185,8 +185,8 @@ services:
 
     # pgAdmin configuration
     environment:
-      - PGADMIN_DEFAULT_EMAIL=dev@apex-api.local
-      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-dev@apex-api.local}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
       - PGADMIN_CONFIG_SERVER_MODE=False
       - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
 

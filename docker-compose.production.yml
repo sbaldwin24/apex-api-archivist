@@ -1,0 +1,445 @@
+# ==============================================================================
+# APEX DATA API - Production Docker Compose
+# ==============================================================================
+# Full production stack with job queuing, caching, and monitoring
+# ==============================================================================
+
+services:
+  # ==============================================================================
+  # DATABASE SERVICES
+  # ==============================================================================
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: apex-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-apex_data}
+      POSTGRES_USER: ${DB_USER:-apex_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-apex_secure_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./migrations:/opt/migrations:ro
+    ports:
+      - "${DB_EXTERNAL_PORT:-5432}:5432"
+    networks:
+      - apex-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-apex_user} -d ${DB_NAME:-apex_data}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ==============================================================================
+  # CACHE & QUEUE SERVICES
+  # ==============================================================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: apex-redis-prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/etc/redis/redis.conf:ro
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+    networks:
+      - apex-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+  # ==============================================================================
+  # APPLICATION SERVICES
+  # ==============================================================================
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      target: production
+    container_name: apex-api-prod
+    restart: unless-stopped
+    command: ["node", "src/production-server.js"]
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+
+      # Database Configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-apex_data}
+      DB_USER: ${DB_USER:-apex_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_MAX_CONNECTIONS: ${DB_MAX_CONNECTIONS:-20}
+      DB_CONNECTION_TIMEOUT: ${DB_CONNECTION_TIMEOUT:-30000}
+
+      # Redis Configuration for Bull Queues
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: 0
+
+      # Production Queue & Scheduler Configuration
+      ENABLE_PRODUCTION_QUEUES: "true"
+      ENABLE_PRODUCTION_SCHEDULER: "true"
+
+      # Queue Concurrency Settings
+      SOCIAL_MEDIA_CONCURRENCY: ${SOCIAL_MEDIA_CONCURRENCY:-2}
+      BROADCAST_CONCURRENCY: ${BROADCAST_CONCURRENCY:-1}
+      FINANCIAL_CONCURRENCY: ${FINANCIAL_CONCURRENCY:-1}
+      PERFORMANCE_CONCURRENCY: ${PERFORMANCE_CONCURRENCY:-2}
+
+      # Scheduler Enablement Settings
+      ENABLE_SOCIAL_MEDIA_SCHEDULER: ${ENABLE_SOCIAL_MEDIA_SCHEDULER:-true}
+      ENABLE_BROADCAST_SCHEDULER: ${ENABLE_BROADCAST_SCHEDULER:-true}
+      ENABLE_FINANCIAL_SCHEDULER: ${ENABLE_FINANCIAL_SCHEDULER:-true}
+      ENABLE_PERFORMANCE_SCHEDULER: ${ENABLE_PERFORMANCE_SCHEDULER:-true}
+      ENABLE_TRENDING_SCHEDULER: ${ENABLE_TRENDING_SCHEDULER:-true}
+
+      # Scraper Configuration
+      ENABLE_SOCIAL_MEDIA_SCRAPER: ${ENABLE_SOCIAL_MEDIA_SCRAPER:-true}
+      ENABLE_BROADCAST_SCRAPER: ${ENABLE_BROADCAST_SCRAPER:-true}
+      ENABLE_FINANCIAL_SCRAPER: ${ENABLE_FINANCIAL_SCRAPER:-true}
+      ENABLE_PERFORMANCE_SCRAPER: ${ENABLE_PERFORMANCE_SCRAPER:-true}
+
+      # Social Media API Keys (optional)
+      TWITTER_API_KEY: ${TWITTER_API_KEY:-}
+      TWITTER_API_SECRET: ${TWITTER_API_SECRET:-}
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN:-}
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      INSTAGRAM_CLIENT_ID: ${INSTAGRAM_CLIENT_ID:-}
+      FACEBOOK_ACCESS_TOKEN: ${FACEBOOK_ACCESS_TOKEN:-}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+
+      # Security & Performance
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-900000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENABLE_STRUCTURED_LOGGING: "true"
+
+    volumes:
+      - api_logs:/app/logs
+      - api_uploads:/app/uploads
+    ports:
+      - "${API_EXTERNAL_PORT:-3000}:3000"
+    networks:
+      - apex-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # ==============================================================================
+  # JOB PROCESSING SERVICES
+  # ==============================================================================
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      target: production
+    container_name: apex-worker-prod
+    restart: unless-stopped
+    command: ["/app/start-worker.sh"]
+    environment:
+      NODE_ENV: production
+
+      # Database Configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-apex_data}
+      DB_USER: ${DB_USER:-apex_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # Job Processing Configuration
+      ENABLE_JOB_PROCESSOR: "true"
+      JOB_CONCURRENCY: ${JOB_CONCURRENCY:-3}
+      JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
+      JOB_BACKOFF_DELAY: ${JOB_BACKOFF_DELAY:-5000}
+
+      # Scraper Configuration
+      ENABLE_SOCIAL_MEDIA_SCRAPER: ${ENABLE_SOCIAL_MEDIA_SCRAPER:-true}
+      SCRAPE_CONCURRENCY: ${SCRAPE_CONCURRENCY:-2}
+      SCRAPE_DELAY: ${SCRAPE_DELAY:-2000}
+
+      # Social Media API Keys
+      TWITTER_API_KEY: ${TWITTER_API_KEY:-}
+      TWITTER_API_SECRET: ${TWITTER_API_SECRET:-}
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN:-}
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      FACEBOOK_ACCESS_TOKEN: ${FACEBOOK_ACCESS_TOKEN:-}
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENABLE_STRUCTURED_LOGGING: "true"
+
+    volumes:
+      - worker_logs:/app/logs
+    networks:
+      - apex-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+        reservations:
+          memory: 1G
+          cpus: '0.75'
+      replicas: ${WORKER_REPLICAS:-2}
+
+  # ==============================================================================
+  # SCHEDULING SERVICE
+  # ==============================================================================
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      target: production
+    container_name: apex-scheduler-prod
+    restart: unless-stopped
+    command: ["/app/start-scheduler.sh"]
+    environment:
+      NODE_ENV: production
+
+      # Database Configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-apex_data}
+      DB_USER: ${DB_USER:-apex_user}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # Scheduler Configuration
+      ENABLE_SCHEDULER: "true"
+      SCHEDULER_MODE: "production"
+      DEFAULT_JOB_PRIORITY: ${DEFAULT_JOB_PRIORITY:-5}
+
+      # Scraper Scheduling
+      SOCIAL_MEDIA_CRON: ${SOCIAL_MEDIA_CRON:-0 */4 * * *}     # Every 4 hours
+      BROADCAST_CRON: ${BROADCAST_CRON:-0 6 * * *}             # Daily at 6 AM
+      FINANCIAL_CRON: ${FINANCIAL_CRON:-0 2 * * 1}             # Weekly Monday 2 AM
+      PERFORMANCE_CRON: ${PERFORMANCE_CRON:-0 4 * * *}         # Daily at 4 AM
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENABLE_STRUCTURED_LOGGING: "true"
+
+    volumes:
+      - scheduler_logs:/app/logs
+    networks:
+      - apex-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ==============================================================================
+  # MONITORING & UTILITIES
+  # ==============================================================================
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: apex-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: "production:redis:6379"
+      HTTP_USER: ${REDIS_COMMANDER_USER:-admin}
+      HTTP_PASSWORD: ${REDIS_COMMANDER_PASSWORD:-admin123}
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+    networks:
+      - apex-network
+    depends_on:
+      - redis
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+
+  bull-dashboard:
+    image: deadly0/bull-board
+    container_name: apex-bull-dashboard
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    ports:
+      - "${BULL_DASHBOARD_PORT:-3001}:3000"
+    networks:
+      - apex-network
+    depends_on:
+      - redis
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+
+  # ==============================================================================
+  # BACKUP SERVICE
+  # ==============================================================================
+
+  backup:
+    image: prodrigestivill/postgres-backup-local
+    container_name: apex-backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${DB_NAME:-apex_data}
+      POSTGRES_USER: ${DB_USER:-apex_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-apex_secure_password}
+      POSTGRES_EXTRA_OPTS: "-Z 6 --schema=public --blobs"
+      SCHEDULE: "${BACKUP_SCHEDULE:-@daily}"
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_KEEP_WEEKS: ${BACKUP_KEEP_WEEKS:-4}
+      BACKUP_KEEP_MONTHS: ${BACKUP_KEEP_MONTHS:-6}
+    volumes:
+      - ./backups:/backups
+    networks:
+      - apex-network
+    depends_on:
+      - postgres
+    profiles:
+      - backup
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+
+# ==============================================================================
+# NETWORKS
+# ==============================================================================
+
+networks:
+  apex-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ==============================================================================
+# VOLUMES
+# ==============================================================================
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/postgres
+
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/redis
+
+  api_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${LOGS_DIR:-./logs}/api
+
+  worker_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${LOGS_DIR:-./logs}/worker
+
+  scheduler_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${LOGS_DIR:-./logs}/scheduler
+
+  api_uploads:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${UPLOADS_DIR:-./uploads}

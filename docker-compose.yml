@@ -3,9 +3,9 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: apex_data
-      POSTGRES_USER: apex_user
-      POSTGRES_PASSWORD: apex_password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
@@ -16,9 +16,9 @@ services:
         - CMD-SHELL
         - pg_isready
         - -U
-        - apex_user
+        - ${POSTGRES_USER}
         - -d
-        - apex_data
+        - ${POSTGRES_DB}
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,9 +29,9 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: apex_user
-      DB_PASSWORD: apex_password
-      DB_NAME: apex_data
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
       API_PORT: 3000
       NODE_ENV: production
     ports:
@@ -61,10 +61,10 @@ services:
       - dist/consolidated-scraper.js
     environment:
       DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: apex_user
-      DB_PASSWORD: apex_password
-      DB_NAME: apex_data
+      DB_PORT: ${POSTGRES_PORT}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
       SCRAPE_YEAR: 2024
       START_RACE: 1
       END_RACE: 36
